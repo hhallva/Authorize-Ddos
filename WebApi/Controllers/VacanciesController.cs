@@ -3,7 +3,6 @@ using DataLayer.DTOs;
 using DataLayer.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using NuGet.Versioning;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace WebApi.Controllers
@@ -44,7 +43,8 @@ namespace WebApi.Controllers
         [SwaggerResponse(StatusCodes.Status200OK, "Успешное получение списка. Возврат списка навыков.", Type = typeof(IEnumerable<SkillDto>))]
         [SwaggerResponse(StatusCodes.Status404NotFound, "Объект не найден. Возврат сообщения об ошибке.", Type = typeof(ApiErrorDto))]
         [SwaggerResponse(StatusCodes.Status400BadRequest, "Неверный параметр. Возврат сообщения об ошибке.", Type = typeof(ApiErrorDto))]
-        public async Task<ActionResult<IEnumerable<SkillDto>>> GetSkillsAsync(int id)
+        public async Task<ActionResult<IEnumerable<SkillDto>>> GetSkillsAsync(
+            [SwaggerParameter("Id необходимой вакансии", Required = true)] int id)
         {
             if (id <= 0)
                 return BadRequest(new ApiErrorDto("Неверный Id. Id должен быть положительным числом", 2002));
@@ -54,7 +54,7 @@ namespace WebApi.Controllers
                 .SingleOrDefaultAsync(v => v.VcancyId == id);
 
             if (vacancy is null)
-                return NotFound(new ApiErrorDto("Вакансия не найдена.", 2002));
+                return NotFound(new ApiErrorDto("Вакансия не найдена.", 2004));
             if (!vacancy.Skills.Any())
                 return NotFound(new ApiErrorDto("Вакансия не требувет навыков.", 2003));
 
@@ -76,12 +76,14 @@ namespace WebApi.Controllers
         [SwaggerResponse(StatusCodes.Status201Created, "Успешное добавлени навыка. Возврат навыка", Type = typeof(SkillDto))]
         [SwaggerResponse(StatusCodes.Status404NotFound, "Объект не найден. Возврат сообщения об ошибке.", Type = typeof(ApiErrorDto))]
         [SwaggerResponse(StatusCodes.Status400BadRequest, "Неверный параметр. Возврат сообщения об ошибке.", Type = typeof(ApiErrorDto))]
-        public async Task<ActionResult<SkillDto>> PostSkillAsync(int id, SkillDto skillDto)
+        public async Task<ActionResult<SkillDto>> PostSkillAsync(
+            [SwaggerParameter("Id необходимой вакансии", Required = true)] int id,
+            [SwaggerRequestBody("Данные вакансии", Required = true)] SkillDto skillDto)
         {
             try
             {
                 var skill = new Skill();
-                
+
                 var vacancy = await context.Vacancies
                     .Include(v => v.Skills)
                     .SingleOrDefaultAsync(v => v.VcancyId == id);
@@ -93,7 +95,7 @@ namespace WebApi.Controllers
                 if (vacancy.Skills.Any(s => s.Name == skillDto.Name))
                     return BadRequest(new ApiErrorDto("Такой навык уже присутствует у вакансии", 2005));
 
-                if(skills.Any(s => s.Name.ToLower() == skillDto.Name.ToLower()))
+                if (skills.Any(s => s.Name.ToLower() == skillDto.Name.ToLower()))
                 {
                     skill = skills.FirstOrDefault(s => s.Name == skillDto.Name);
 
@@ -116,13 +118,47 @@ namespace WebApi.Controllers
                     .Include(v => v.Skills)
                     .SingleOrDefaultAsync(v => v.VcancyId == id);
 
-                return Created("",skill);
+                return Created("", skill);
 
             }
             catch
             {
-                return BadRequest(new ApiErrorDto("Неверные параметры", 200));
+                return BadRequest(new ApiErrorDto("Неверные параметры", 2005));
             }
+        }
+
+
+        [HttpPatch("Vacancy/{id}")]
+        [SwaggerOperation(
+            Summary = "Закрытие вакансии",
+            Description = "Метод принимающий Id вакансии, при наличии вакансии в бд, закрывает её. Возвращает закрытую вакансию. ")]
+        [SwaggerResponse(StatusCodes.Status200OK, "Успешное закрытие ванкансии. Возврат вакансии.", Type = typeof(VacancyDto))]
+        [SwaggerResponse(StatusCodes.Status404NotFound, "Объект не найден. Возврат сообщения об ошибке.", Type = typeof(ApiErrorDto))]
+        [SwaggerResponse(StatusCodes.Status400BadRequest, "Неверный параметр. Возврат сообщения об ошибке.", Type = typeof(ApiErrorDto))]
+        public async Task<ActionResult<VacancyDto>> PatchVacancyAsync(
+            [SwaggerParameter("Id необходимой вакансии", Required = true)] int id)
+        {
+
+            if (id <= 0)
+                return BadRequest(new ApiErrorDto("Неверный Id. Id должен быть положительным числом", 2002));
+
+            var vacancy = await context.Vacancies
+                .Include(v => v.Skills)
+                .Include(v => v.Position)
+                .SingleOrDefaultAsync(v => v.VcancyId == id);
+
+            if (vacancy is null)
+                return NotFound(new ApiErrorDto("Вакансия не найдена.", 2004));
+            if (vacancy.ClosedDate != null)
+                return NotFound(new ApiErrorDto("Вакансия уже закрыта.", 2006));
+
+            vacancy.ClosedDate = DateTime.UtcNow;
+            context.Vacancies.Update(vacancy);
+            await context.SaveChangesAsync();
+
+            var vacancyDto = vacancy.ToDo();
+
+            return Ok(vacancyDto);
         }
     }
 }
